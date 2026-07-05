@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPU Scheduler</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header>
+    <div class="logo">
+        <div class="logo-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="16" height="16" x="4" y="4" rx="2"></rect>
+                <rect width="6" height="6" x="9" y="9" rx="1"></rect>
+                <path d="M15 2v2"></path><path d="M15 20v2"></path><path d="M2 15h2"></path>
+                <path d="M2 9h2"></path><path d="M20 15h2"></path><path d="M20 9h2"></path>
+                <path d="M9 2v2"></path><path d="M9 20v2"></path>
+            </svg>
+        </div>
+        CPU Scheduler
+    </div>
+    
+    <div class="controls">
+        <select id="algorithm">
+            <option value="FCFS">First-Come, First-Serve</option>
+            <option value="SJF">Shortest Job First (NP)</option>
+            <option value="SRTF">Shortest Remaining Time (P)</option>
+            <option value="PriorityNP">Priority (Non-Preemptive)</option>
+            <option value="PriorityP">Priority (Preemptive)</option>
+            <option value="RR">Round Robin</option>
+        </select>
+        
+        <div class="quantum-group" id="quantumGroup" style="display: none;">
+            <label>Quantum</label>
+            <input type="number" id="timeQuantum" value="2" min="1">
+        </div>
+    </div>
+</header>
+
+<main>
+    <!-- Left Column: Inputs -->
+    <div>
+        <div class="card" style="margin-bottom: 1.5rem;">
+            <div class="card-title">Add Process</div>
+            <form id="addForm">
+                <div class="form-group">
+                    <label>Arrival Time</label>
+                    <input type="number" id="atInput" min="0" required>
+                </div>
+                <div class="form-group">
+                    <label>Burst Time</label>
+                    <input type="number" id="btInput" min="1" required>
+                </div>
+                <div class="form-group">
+                    <label>Priority (lower = higher)</label>
+                    <input type="number" id="prioInput" min="1" value="1" required>
+                </div>
+                <button type="submit" class="btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    Add Process
+                </button>
+            </form>
+        </div>
+
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <div class="card-title" style="margin: 0;">Ready Queue</div>
+                <span id="queueCount" style="font-size: 0.75rem; color: var(--text-muted); font-family: monospace;">0</span>
+            </div>
+            
+            <div id="queueEmpty" class="empty-state">
+                <div class="empty-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                </div>
+                No processes yet
+            </div>
+
+            <table id="queueTable" hidden>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>AT</th>
+                        <th>BT</th>
+                        <th>Prio</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="queueBody"></tbody>
+            </table>
+
+            <div class="flex-row">
+                <button id="calcBtn" class="btn" disabled>Calculate</button>
+                <button id="clearBtn" class="btn btn-secondary" disabled>Clear</button>
+            </div>
+            <div id="calcStatus" class="calculating">Calculating via Python Backend...</div>
+        </div>
+    </div>
+
+    <!-- Right Column: Results -->
+    <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+        <div class="card" id="resultsCard" hidden>
+            <div class="card-title">Execution Metrics</div>
+            
+            <div class="metrics-grid">
+                <div class="metric-box">
+                    <div class="metric-label">Avg. Turnaround</div>
+                    <div class="metric-value" id="avgTat">0.00 <span class="metric-unit">ms</span></div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label">Avg. Waiting</div>
+                    <div class="metric-value" id="avgWt">0.00 <span class="metric-unit">ms</span></div>
+                </div>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>AT</th>
+                        <th>BT</th>
+                        <th>Prio</th>
+                        <th>ST</th>
+                        <th>ET</th>
+                        <th>TAT</th>
+                        <th>WT</th>
+                    </tr>
+                </thead>
+                <tbody id="metricsBody"></tbody>
+            </table>
+
+            <div class="gantt-container">
+                <div class="card-title">Execution Timeline</div>
+                <div class="gantt-track" id="ganttTrack"></div>
+                <div class="gantt-markers" id="ganttMarkers"></div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script>
+// State
+let processes = [];
+const COLORS = [
+  { bg: 'rgba(59,130,246,0.15)',  border: '#3b82f6', text: '#93c5fd' },
+  { bg: 'rgba(16,185,129,0.15)',  border: '#10b981', text: '#6ee7b7' },
+  { bg: 'rgba(139,92,246,0.15)',  border: '#8b5cf6', text: '#c4b5fd' },
+  { bg: 'rgba(245,158,11,0.15)',  border: '#f59e0b', text: '#fcd34d' },
+  { bg: 'rgba(236,72,153,0.15)',  border: '#ec4899', text: '#f9a8d4' },
+  { bg: 'rgba(6,182,212,0.15)',   border: '#06b6d4', text: '#67e8f9' },
+  { bg: 'rgba(244,63,94,0.15)',   border: '#f43f5e', text: '#fda4af' },
+  { bg: 'rgba(20,184,166,0.15)',  border: '#14b8a6', text: '#5eead4' },
+];
+
+function getColor(id) {
+    if (id === 'Idle') return null;
+    const num = parseInt(id.replace('P', ''));
+    return COLORS[(num - 1) % COLORS.length];
+}
+
+// Elements
+const algorithmSelect = document.getElementById('algorithm');
+const quantumGroup = document.getElementById('quantumGroup');
+const addForm = document.getElementById('addForm');
+const atInput = document.getElementById('atInput');
+const btInput = document.getElementById('btInput');
+const prioInput = document.getElementById('prioInput');
+
+const queueEmpty = document.getElementById('queueEmpty');
+const queueTable = document.getElementById('queueTable');
+const queueBody = document.getElementById('queueBody');
+const queueCount = document.getElementById('queueCount');
+const calcBtn = document.getElementById('calcBtn');
+const clearBtn = document.getElementById('clearBtn');
+const calcStatus = document.getElementById('calcStatus');
+
+const resultsCard = document.getElementById('resultsCard');
+const avgTatEl = document.getElementById('avgTat');
+const avgWtEl = document.getElementById('avgWt');
+const metricsBody = document.getElementById('metricsBody');
+const ganttTrack = document.getElementById('ganttTrack');
+const ganttMarkers = document.getElementById('ganttMarkers');
+
+// Event Listeners
+algorithmSelect.addEventListener('change', (e) => {
+    quantumGroup.style.display = e.target.value === 'RR' ? 'flex' : 'none';
+});
+
+addForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const newProcess = {
+        id: `P${processes.length + 1}`,
+        at: parseInt(atInput.value),
+        bt: parseInt(btInput.value),
+        priority: parseInt(prioInput.value) || 1
+    };
+    processes.push(newProcess);
+    atInput.value = '';
+    btInput.value = '';
+    prioInput.value = '1';
+    atInput.focus();
+    renderQueue();
+});
+
+clearBtn.addEventListener('click', () => {
+    processes = [];
+    renderQueue();
+    resultsCard.hidden = true;
+});
+
+calcBtn.addEventListener('click', async () => {
+    calcBtn.disabled = true;
+    calcStatus.style.display = 'block';
+    
+    try {
+        const response = await fetch('/calculate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                algorithm: algorithmSelect.value,
+                timeQuantum: document.getElementById('timeQuantum').value,
+                processes: processes
+            })
+        });
+        
+        const data = await response.json();
+        renderResults(data);
+    } catch (err) {
+        alert("Failed to reach Python backend.");
+        console.error(err);
+    } finally {
+        calcBtn.disabled = false;
+        calcStatus.style.display = 'none';
+    }
+});
+
+// Renders
+function renderQueue() {
+    // Renumber IDs
+    processes.forEach((p, i) => p.id = `P${i + 1}`);
+    
+    queueCount.innerText = processes.length;
+    
+    if (processes.length === 0) {
+        queueEmpty.hidden = false;
+        queueTable.hidden = true;
+        calcBtn.disabled = true;
+        clearBtn.disabled = true;
+    } else {
+        queueEmpty.hidden = true;
+        queueTable.hidden = false;
+        calcBtn.disabled = false;
+        clearBtn.disabled = false;
+        
+        queueBody.innerHTML = processes.map((p, idx) => `
+            <tr>
+                <td class="table-id">${p.id}</td>
+                <td style="font-family: monospace;">${p.at}</td>
+                <td style="font-family: monospace;">${p.bt}</td>
+                <td style="font-family: monospace; color: var(--text-muted);">${p.priority}</td>
+                <td style="text-align: right;">
+                    <button class="action-btn" onclick="removeProcess(${idx})">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    }
+}
+
+// Attach to window so onclick works
+window.removeProcess = (idx) => {
+    processes.splice(idx, 1);
+    renderQueue();
+};
+
+function renderResults(data) {
+    if (!data || !data.metrics) return;
+    resultsCard.hidden = false;
+    
+    // Metrics table
+    const pKeys = Object.keys(data.metrics).sort((a,b) => parseInt(a.substring(1)) - parseInt(b.substring(1)));
+    
+    let totalTat = 0, totalWt = 0;
+    
+    metricsBody.innerHTML = pKeys.map(k => {
+        const p = data.metrics[k];
+        totalTat += p.tat;
+        totalWt += p.wt;
+        return `
+            <tr>
+                <td class="table-id">${p.id}</td>
+                <td style="font-family: monospace;">${p.at}</td>
+                <td style="font-family: monospace;">${p.bt}</td>
+                <td style="font-family: monospace; color: var(--text-muted);">${p.priority}</td>
+                <td style="font-family: monospace;">${p.st}</td>
+                <td style="font-family: monospace;">${p.ct}</td>
+                <td style="font-family: monospace; font-weight: 500; color: var(--text-primary);">${p.tat}</td>
+                <td style="font-family: monospace; font-weight: 500; color: var(--text-primary);">${p.wt}</td>
+            </tr>
+        `;
+    }).join('');
+    
+    avgTatEl.innerHTML = pKeys.length ? (totalTat / pKeys.length).toFixed(2) + ' <span class="metric-unit">ms</span>' : '0.00 <span class="metric-unit">ms</span>';
+    avgWtEl.innerHTML = pKeys.length ? (totalWt / pKeys.length).toFixed(2) + ' <span class="metric-unit">ms</span>' : '0.00 <span class="metric-unit">ms</span>';
+    
+    // Gantt Chart logic (non-linear scaling)
+    const blocks = data.gantt.map(b => {
+        const duration = b.end - b.start;
+        return { ...b, duration, weight: duration === 0 ? 0 : Math.max(3, Math.pow(duration, 0.6)) };
+    });
+    
+    const totalWeight = blocks.reduce((acc, b) => acc + b.weight, 0);
+    
+    let runningLeft = 0;
+    const visual = blocks.map(b => {
+        const widthPct = totalWeight > 0 ? (b.weight / totalWeight) * 100 : 0;
+        const out = { ...b, widthPct, leftPct: runningLeft, rightPct: runningLeft + widthPct };
+        runningLeft += widthPct;
+        return out;
+    });
+    
+    const timeMarkers = [{ time: 0, pct: 0 }];
+    visual.forEach(b => {
+        const last = timeMarkers[timeMarkers.length - 1];
+        if (b.end !== last.time) timeMarkers.push({ time: b.end, pct: b.rightPct });
+    });
+    
+    // Render Track
+    ganttTrack.innerHTML = visual.map(b => {
+        const color = getColor(b.id);
+        const isIdle = b.id === 'Idle';
+        
+        let style = `width: ${b.widthPct}%;`;
+        if (isIdle) {
+            style += ` background-color: transparent; border-top-color: var(--text-muted); color: var(--text-muted);`;
+        } else {
+            style += ` background-color: ${color.bg}; border-top-color: ${color.border}; color: ${color.text};`;
+        }
+        
+        return `<div class="gantt-block ${isIdle ? 'gantt-idle' : ''}" style="${style}" title="${b.id}: ${b.start}-${b.end} (${b.duration}ms)">
+            ${b.widthPct > 4.5 ? b.id : ''}
+        </div>`;
+    }).join('');
+    
+    // Render Markers
+    ganttMarkers.innerHTML = timeMarkers.map(m => `
+        <div class="gantt-marker" style="left: ${m.pct}%">
+            <div class="gantt-marker-line"></div>
+            <div class="gantt-marker-time">${m.time}</div>
+        </div>
+    `).join('');
+}
+</script>
+
+</body>
+</html>
