@@ -34,7 +34,7 @@
         
         <div class="quantum-group" id="quantumGroup" style="display: none;">
             <label>Quantum</label>
-            <input type="number" id="timeQuantum" value="2" min="1">
+            <input type="number" id="timeQuantum" value="2" min="1" step="1">
         </div>
     </div>
 </header>
@@ -184,7 +184,15 @@ const ganttMarkers = document.getElementById('ganttMarkers');
 
 // Event Listeners
 algorithmSelect.addEventListener('change', (e) => {
+    // Only show quantum when Round Robin is selected.
     quantumGroup.style.display = e.target.value === 'RR' ? 'flex' : 'none';
+});
+
+document.getElementById('timeQuantum').addEventListener('input', (e) => {
+    // Keep the value from going to zero or negative.
+    if (e.target.value !== '' && Number(e.target.value) < 1) {
+        e.target.value = 1;
+    }
 });
 
 addForm.addEventListener('submit', (e) => {
@@ -219,12 +227,17 @@ calcBtn.addEventListener('click', async () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 algorithm: algorithmSelect.value,
+                // Send the current quantum value to the Python backend.
                 timeQuantum: document.getElementById('timeQuantum').value,
                 processes: processes
             })
         });
         
         const data = await response.json();
+        if (!response.ok) {
+            alert(data.error || 'Invalid quantum value.');
+            return;
+        }
         renderResults(data);
     } catch (err) {
         alert("Failed to reach Python backend.");

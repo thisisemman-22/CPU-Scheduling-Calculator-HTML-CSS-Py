@@ -13,7 +13,15 @@ def calculate():
     data = request.get_json()
     
     algorithm = data.get('algorithm', 'FCFS')
-    time_quantum = int(data.get('timeQuantum', 2))
+    # Round Robin needs a positive quantum so it does not get stuck.
+    try:
+        time_quantum = int(data.get('timeQuantum', 2))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Quantum must be a positive whole number."}), 400
+
+    if time_quantum <= 0:
+        return jsonify({"error": "Quantum must be greater than zero."}), 400
+
     processes = data.get('processes', [])
     
     if not processes:

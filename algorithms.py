@@ -161,14 +161,8 @@ def srtf(processes):
     if prev_id is not None:
         gantt.append({"id": prev_id, "start": block_start, "end": current_time})
         
-    final_gantt = []
-    for b in gantt:
-        if len(final_gantt) > 0 and final_gantt[-1]['id'] == b['id']:
-            final_gantt[-1]['end'] = b['end']
-        else:
-            final_gantt.append(b)
-            
-    return {"gantt": final_gantt, "metrics": metrics}
+    # Keep every Round Robin slice separate so the chart shows each quantum.
+    return {"gantt": gantt, "metrics": metrics}
 
 
 def priority_np(processes):
@@ -306,6 +300,9 @@ def priority_p(processes):
 
 
 def round_robin(processes, time_quantum):
+    if time_quantum <= 0:
+        raise ValueError("time_quantum must be greater than zero")
+
     gantt = []
     metrics = {}
     
@@ -323,24 +320,16 @@ def round_robin(processes, time_quantum):
     completed = 0
     i = 0 
     
-    # Enqueue processes arriving at time 0
+    # Put the first processes in the queue before the loop starts.
     while i < len(remaining_processes) and remaining_processes[i]['at'] <= current_time:
         queue.append(remaining_processes[i])
         i += 1
         
-    prev_id = None
-    block_start = 0
-    
     while completed < len(processes):
         if len(queue) == 0:
-            if prev_id is not None and prev_id != "Idle":
-                gantt.append({"id": prev_id, "start": block_start, "end": current_time})
-                
             next_arrival = remaining_processes[i]['at']
-            if prev_id != "Idle":
-                block_start = current_time
-                prev_id = "Idle"
-                
+            if current_time < next_arrival:
+                gantt.append({"id": "Idle", "start": current_time, "end": next_arrival})
             current_time = next_arrival
             
             while i < len(remaining_processes) and remaining_processes[i]['at'] <= current_time:
@@ -349,21 +338,17 @@ def round_robin(processes, time_quantum):
             continue
             
         p = queue.pop(0)
-        
-        if prev_id != p['id']:
-            if prev_id is not None:
-                gantt.append({"id": prev_id, "start": block_start, "end": current_time})
-            block_start = current_time
-            prev_id = p['id']
-            
+
         if p['st'] == -1:
             p['st'] = current_time
-            
+
+        slice_start = current_time
         time_to_run = min(p['rt'], time_quantum)
         p['rt'] -= time_to_run
         current_time += time_to_run
+        gantt.append({"id": p['id'], "start": slice_start, "end": current_time})
         
-        # Check for arrivals during this execution block
+        # Add any new arrivals after this time slice is done.
         while i < len(remaining_processes) and remaining_processes[i]['at'] <= current_time:
             queue.append(remaining_processes[i])
             i += 1
@@ -386,15 +371,5 @@ def round_robin(processes, time_quantum):
             }
         else:
             queue.append(p) 
-            
-    if prev_id is not None:
-        gantt.append({"id": prev_id, "start": block_start, "end": current_time})
-        
-    final_gantt = []
-    for b in gantt:
-        if len(final_gantt) > 0 and final_gantt[-1]['id'] == b['id']:
-            final_gantt[-1]['end'] = b['end']
-        else:
-            final_gantt.append(b)
-            
-    return {"gantt": final_gantt, "metrics": metrics}
+
+    return {"gantt": gantt, "metrics": metrics}
