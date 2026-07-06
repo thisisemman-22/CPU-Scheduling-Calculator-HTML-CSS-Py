@@ -1,5 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
+/* Theme variables used everywhere in the UI. */
 :root {
   --bg-app: #09090b;
   --bg-card: #121214;
@@ -21,12 +22,14 @@
   --radius-xl: 16px;
 }
 
+/* Make sizing and spacing predictable across the whole page. */
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
+/* Base app shell styling for the full screen. */
 body {
   background-color: var(--bg-app);
   color: var(--text-primary);
@@ -37,10 +40,10 @@ body {
   flex-direction: column;
 }
 
-/* Utilities */
+/* Small helper for monospace text. */
 .font-mono { font-family: 'JetBrains Mono', monospace; }
 
-/* Header */
+/* Sticky top bar that holds the title and controls. */
 header {
   background-color: rgba(18, 18, 20, 0.7);
   backdrop-filter: blur(12px);
@@ -123,7 +126,7 @@ select:focus, input:focus {
 
 /* Layout */
 main {
-  max-w-width: 1200px;
+  max-width: 1200px;
   margin: 0 auto;
   width: 100%;
   padding: 2rem;

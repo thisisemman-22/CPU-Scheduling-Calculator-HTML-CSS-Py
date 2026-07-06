@@ -140,8 +140,9 @@
 </main>
 
 <script>
-// State
+// Global page state. This array holds every process the user adds.
 let processes = [];
+// Palette used to give each process a repeatable visual color.
 const COLORS = [
   { bg: 'rgba(59,130,246,0.15)',  border: '#3b82f6', text: '#93c5fd' },
   { bg: 'rgba(16,185,129,0.15)',  border: '#10b981', text: '#6ee7b7' },
@@ -154,12 +155,15 @@ const COLORS = [
 ];
 
 function getColor(id) {
+    // Idle blocks use a neutral style instead of a process color.
     if (id === 'Idle') return null;
+    // Extract the numeric part of labels like P1, P2, and P3.
     const num = parseInt(id.replace('P', ''));
+    // Cycle through the palette so each process gets a stable color.
     return COLORS[(num - 1) % COLORS.length];
 }
 
-// Elements
+// Cache the DOM nodes that the script reads from or updates.
 const algorithmSelect = document.getElementById('algorithm');
 const quantumGroup = document.getElementById('quantumGroup');
 const addForm = document.getElementById('addForm');
@@ -182,21 +186,22 @@ const metricsBody = document.getElementById('metricsBody');
 const ganttTrack = document.getElementById('ganttTrack');
 const ganttMarkers = document.getElementById('ganttMarkers');
 
-// Event Listeners
+// Show the quantum control only when Round Robin is selected.
 algorithmSelect.addEventListener('change', (e) => {
-    // Only show quantum when Round Robin is selected.
     quantumGroup.style.display = e.target.value === 'RR' ? 'flex' : 'none';
 });
 
+// Prevent the quantum input from dropping below 1 in the browser.
 document.getElementById('timeQuantum').addEventListener('input', (e) => {
-    // Keep the value from going to zero or negative.
     if (e.target.value !== '' && Number(e.target.value) < 1) {
         e.target.value = 1;
     }
 });
 
+// Build a new process object from the form values.
 addForm.addEventListener('submit', (e) => {
     e.preventDefault();
+    // Read the inputs and convert them into numbers for the scheduler.
     const newProcess = {
         id: `P${processes.length + 1}`,
         at: parseInt(atInput.value),
@@ -211,12 +216,14 @@ addForm.addEventListener('submit', (e) => {
     renderQueue();
 });
 
+// Clear the queue and hide any previous results.
 clearBtn.addEventListener('click', () => {
     processes = [];
     renderQueue();
     resultsCard.hidden = true;
 });
 
+// Send the process list to the Python backend and render the response.
 calcBtn.addEventListener('click', async () => {
     calcBtn.disabled = true;
     calcStatus.style.display = 'block';
@@ -226,6 +233,7 @@ calcBtn.addEventListener('click', async () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+                // Tell the backend which scheduler to use.
                 algorithm: algorithmSelect.value,
                 // Send the current quantum value to the Python backend.
                 timeQuantum: document.getElementById('timeQuantum').value,
@@ -233,6 +241,7 @@ calcBtn.addEventListener('click', async () => {
             })
         });
         
+        // The backend can return an error message for invalid input.
         const data = await response.json();
         if (!response.ok) {
             alert(data.error || 'Invalid quantum value.');
@@ -240,17 +249,19 @@ calcBtn.addEventListener('click', async () => {
         }
         renderResults(data);
     } catch (err) {
+        // Network or backend failures end up here.
         alert("Failed to reach Python backend.");
         console.error(err);
     } finally {
+        // Always reset the loading state.
         calcBtn.disabled = false;
         calcStatus.style.display = 'none';
     }
 });
 
-// Renders
+// Render the left-side queue table and empty state.
 function renderQueue() {
-    // Renumber IDs
+    // Renumber IDs so the list stays compact after deletions.
     processes.forEach((p, i) => p.id = `P${i + 1}`);
     
     queueCount.innerText = processes.length;
@@ -282,19 +293,21 @@ function renderQueue() {
     }
 }
 
-// Attach to window so onclick works
+// Expose the delete handler because the table uses inline onclick buttons.
 window.removeProcess = (idx) => {
     processes.splice(idx, 1);
     renderQueue();
 };
 
+// Render the metrics table, averages, and gantt chart.
 function renderResults(data) {
     if (!data || !data.metrics) return;
     resultsCard.hidden = false;
     
-    // Metrics table
+    // Sort metric keys so P1, P2, P3 appear in numeric order.
     const pKeys = Object.keys(data.metrics).sort((a,b) => parseInt(a.substring(1)) - parseInt(b.substring(1)));
     
+    // Keep running totals so we can show averages at the top.
     let totalTat = 0, totalWt = 0;
     
     metricsBody.innerHTML = pKeys.map(k => {
@@ -318,12 +331,13 @@ function renderResults(data) {
     avgTatEl.innerHTML = pKeys.length ? (totalTat / pKeys.length).toFixed(2) + ' <span class="metric-unit">ms</span>' : '0.00 <span class="metric-unit">ms</span>';
     avgWtEl.innerHTML = pKeys.length ? (totalWt / pKeys.length).toFixed(2) + ' <span class="metric-unit">ms</span>' : '0.00 <span class="metric-unit">ms</span>';
     
-    // Gantt Chart logic (non-linear scaling)
+    // Convert gantt entries into visual blocks with a smoother width scale.
     const blocks = data.gantt.map(b => {
         const duration = b.end - b.start;
         return { ...b, duration, weight: duration === 0 ? 0 : Math.max(3, Math.pow(duration, 0.6)) };
     });
     
+    // Sum the weights so each block can be converted into a percentage width.
     const totalWeight = blocks.reduce((acc, b) => acc + b.weight, 0);
     
     let runningLeft = 0;
@@ -334,17 +348,19 @@ function renderResults(data) {
         return out;
     });
     
+    // Build the list of time labels shown under the gantt chart.
     const timeMarkers = [{ time: 0, pct: 0 }];
     visual.forEach(b => {
         const last = timeMarkers[timeMarkers.length - 1];
         if (b.end !== last.time) timeMarkers.push({ time: b.end, pct: b.rightPct });
     });
     
-    // Render Track
+    // Render the gantt blocks themselves.
     ganttTrack.innerHTML = visual.map(b => {
         const color = getColor(b.id);
         const isIdle = b.id === 'Idle';
         
+        // Idle blocks get a neutral striped look instead of a process color.
         let style = `width: ${b.widthPct}%;`;
         if (isIdle) {
             style += ` background-color: transparent; border-top-color: var(--text-muted); color: var(--text-muted);`;
@@ -357,7 +373,7 @@ function renderResults(data) {
         </div>`;
     }).join('');
     
-    // Render Markers
+    // Render the time labels and ticks beneath the gantt blocks.
     ganttMarkers.innerHTML = timeMarkers.map(m => `
         <div class="gantt-marker" style="left: ${m.pct}%">
             <div class="gantt-marker-line"></div>
