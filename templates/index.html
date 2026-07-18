@@ -334,7 +334,7 @@ function renderResults(data) {
     // Convert gantt entries into visual blocks with a smoother width scale.
     const blocks = data.gantt.map(b => {
         const duration = b.end - b.start;
-        return { ...b, duration, weight: duration === 0 ? 0 : Math.max(3, Math.pow(duration, 0.6)) };
+        return { ...b, duration, weight: duration };
     });
     
     // Sum the weights so each block can be converted into a percentage width.

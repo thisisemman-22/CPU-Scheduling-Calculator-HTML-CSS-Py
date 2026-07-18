@@ -1,38 +1,33 @@
+import threading
+import sys
+import os
+import webview
 from flask import Flask, request, jsonify, render_template
 from algorithms import fcfs, sjf, srtf, priority_np, priority_p, round_robin
 
-# Flask application object that serves both the UI and the calculation endpoint.
-app = Flask(__name__)
+# For PyInstaller to find templates/static correctly when bundled
+if getattr(sys, 'frozen', False):
+    template_folder = os.path.join(sys._MEIPASS, 'templates')
+    static_folder = os.path.join(sys._MEIPASS, 'static')
+    app = Flask(__name__, template_folder=template_folder, static_folder=static_folder)
+else:
+    app = Flask(__name__)
 
 @app.route('/')
 def index():
-    # Return the main HTML page for the scheduler UI.
     return render_template('index.html')
 
 @app.route('/calculate', methods=['POST'])
 def calculate():
-    # Parse the JSON payload sent by the browser.
     data = request.get_json()
     
-    # Default to FCFS if no algorithm name is supplied.
     algorithm = data.get('algorithm', 'FCFS')
-    # Round Robin needs a positive quantum so it does not get stuck.
-    try:
-        time_quantum = int(data.get('timeQuantum', 2))
-    except (TypeError, ValueError):
-        return jsonify({"error": "Quantum must be a positive whole number."}), 400
-
-    if time_quantum <= 0:
-        return jsonify({"error": "Quantum must be greater than zero."}), 400
-
-    # Pull the process list out of the request body.
+    time_quantum = int(data.get('timeQuantum', 2))
     processes = data.get('processes', [])
     
-    # If there is nothing to calculate, return an empty response shape.
     if not processes:
         return jsonify({"gantt": [], "metrics": {}})
         
-    # Choose the matching scheduling algorithm.
     if algorithm == 'FCFS':
         result = fcfs(processes)
     elif algorithm == 'SJF':
@@ -48,9 +43,17 @@ def calculate():
     else:
         result = fcfs(processes)
         
-    # Send the finished gantt chart and metrics back to the frontend.
     return jsonify(result)
 
+def start_server():
+    app.run(host='127.0.0.1', port=5000)
+
 if __name__ == '__main__':
-    # Run the Flask development server when this file is executed directly.
-    app.run(debug=True, port=5000)
+    # Start Flask server in a background thread
+    t = threading.Thread(target=start_server)
+    t.daemon = True
+    t.start()
+    
+    # Open PyWebView Desktop Window pointing to the local Flask server
+    webview.create_window('CPU Scheduler', 'http://127.0.0.1:5000', width=1200, height=800)
+    webview.start()
